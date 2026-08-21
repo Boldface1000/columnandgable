@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/assets/*",
+    "/favicon.png",
+    "/icon-192.png",
+    "/icon-512.png",
+    "/manifest.webmanifest"
+  ]
+}

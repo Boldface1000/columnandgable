@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+.tanstack/
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+
+# wrangler local state
+.wrangler/
+
+# editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# logs
+npm-debug.log*
+*.log
