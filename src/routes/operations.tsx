@@ -15,21 +15,29 @@ import {
   Send,
   ArrowDownLeft,
   ArrowUpRight,
+  History as HistoryIcon,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { AvatarEditor } from "@/components/AvatarEditor";
 import {
   useAccount,
   useIsAdmin,
+  isImageAvatar,
   fetchBlogPosts,
   signedBlogUrl,
   fetchLoanApplications,
   fetchSavingsPlans,
   fetchThreads,
+  fetchAllActivities,
+  directionOf,
+  DIRECTION_LABEL,
   useThread,
   useUnreadCount,
   sendMessage,
   type Activity,
+  type ActivityDirection,
   type BlogPost,
   type Card,
   type LoanApplication,
@@ -48,7 +56,10 @@ export const Route = createFileRoute("/operations")({
           "Operator console for Column & Gable: member balances, loan applications, savings plans, the market blog and the support desk.",
       },
       { property: "og:title", content: "Operations Console — Column & Gable" },
-      { property: "og:description", content: "Members, loans, savings, blog and support in one console." },
+      {
+        property: "og:description",
+        content: "Members, loans, savings, blog and support in one console.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -73,17 +84,19 @@ type Member = {
 const MEMBER_FIELDS =
   "id, email, nickname, avatar, account_id, balance, savings, loan_balance, retirement_balance, monthly_gain, interest_rate";
 
-type TabKey = "users" | "loan" | "savings" | "blog" | "profile";
+type TabKey = "users" | "loan" | "savings" | "history" | "blog" | "profile";
 
 const TABS: { key: TabKey; label: string; Icon: typeof Users }[] = [
   { key: "users", label: "Users", Icon: Users },
   { key: "loan", label: "Loan", Icon: HandCoins },
   { key: "savings", label: "Savings", Icon: PiggyBank },
+  { key: "history", label: "History", Icon: HistoryIcon },
   { key: "blog", label: "Blog", Icon: Newspaper },
   { key: "profile", label: "Profile", Icon: UserCog },
 ];
 
-const money = (n: number) => `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+const money = (n: number) =>
+  `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
 
 async function loadMembers() {
   const { data } = await supabase
@@ -98,7 +111,13 @@ function Operations() {
   const { isAdmin, checked: ready } = useIsAdmin();
   const [tab, setTab] = useState<TabKey>("users");
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatUserId, setChatUserId] = useState<string | null>(null);
   const unread = useUnreadCount("admin");
+
+  const openChat = useCallback((userId?: string) => {
+    setChatUserId(userId ?? null);
+    setChatOpen(true);
+  }, []);
 
   useEffect(() => {
     if (ready && !isAdmin) navigate({ to: "/discover", replace: true });
@@ -120,7 +139,7 @@ function Operations() {
           <h1 className="font-display text-3xl font-extrabold">Operations console</h1>
         </div>
         <button
-          onClick={() => setChatOpen(true)}
+          onClick={() => openChat()}
           aria-label="Support messages"
           className="relative grid size-11 place-items-center rounded-full border border-border bg-card"
         >
@@ -134,10 +153,18 @@ function Operations() {
       {tab === "users" && <UsersTab />}
       {tab === "loan" && <LoanTab />}
       {tab === "savings" && <SavingsTab />}
+      {tab === "history" && <HistoryTab onOpenChat={openChat} />}
       {tab === "blog" && <BlogTab />}
       {tab === "profile" && <OperatorProfile />}
 
-      <AdminChat open={chatOpen} onClose={() => setChatOpen(false)} />
+      <AdminChat
+        open={chatOpen}
+        initialUserId={chatUserId}
+        onClose={() => {
+          setChatOpen(false);
+          setChatUserId(null);
+        }}
+      />
 
       <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center pb-5">
         <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-card/90 p-1.5 shadow-float backdrop-blur-xl">
@@ -162,6 +189,245 @@ function Operations() {
         </div>
       </nav>
     </div>
+  );
+}
+
+/* ------------------------------- History ------------------------------- */
+
+type HistoryFilter = "all" | ActivityDirection;
+
+function HistoryTab({ onOpenChat }: { onOpenChat: (userId?: string) => void }) {
+  const [members, setMembers] = useState<Member[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<HistoryFilter>("all");
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    void (async () => {
+      setLoading(true);
+      const [m, a] = await Promise.all([loadMembers(), fetchAllActivities()]);
+      setMembers(m);
+      setActivities(a);
+      setLoading(false);
+    })();
+  }, []);
+
+  const memberById = useMemo(() => {
+    const map = new Map<string, Member>();
+    for (const m of members) map.set(m.id, m);
+    return map;
+  }, [members]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return activities.filter((a) => {
+      if (filter !== "all" && directionOf(a.kind) !== filter) return false;
+      if (!q) return true;
+      const m = memberById.get(a.user_id);
+      return (
+        m?.email.toLowerCase().includes(q) ||
+        m?.account_id.toLowerCase().includes(q) ||
+        m?.nickname.toLowerCase().includes(q) ||
+        a.kind.toLowerCase().includes(q) ||
+        a.reference.toLowerCase().includes(q)
+      );
+    });
+  }, [activities, filter, query, memberById]);
+
+  return (
+    <>
+      <section className="onyx-surface rounded-3xl p-5 shadow-float">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/60">Transaction history</p>
+        <p className="mt-1 font-display text-3xl font-black">{activities.length}</p>
+        <p className="mt-1 text-sm text-white/60">total transactions across every member</p>
+      </section>
+
+      <div className="mt-4 flex items-center gap-2 rounded-2xl border border-border bg-card px-4 py-3">
+        <Search className="size-4 shrink-0 text-muted-foreground" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by member, email, kind or reference"
+          aria-label="Search transaction history"
+          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+
+      <div className="mt-3 flex gap-2 rounded-full border border-border bg-card p-1.5">
+        {(
+          [
+            { key: "all", label: "All" },
+            { key: "received", label: "Received" },
+            { key: "sent", label: "Sent" },
+          ] as const
+        ).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setFilter(key)}
+            className={
+              filter === key
+                ? "gold-surface flex-1 rounded-full py-2.5 text-sm font-bold shadow-gold"
+                : "flex-1 rounded-full py-2.5 text-sm font-medium text-muted-foreground"
+            }
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-5 space-y-2.5">
+        {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {!loading && filtered.length === 0 && (
+          <p className="text-sm text-muted-foreground">No transactions match.</p>
+        )}
+        {!loading &&
+          filtered.map((a) => {
+            const direction = directionOf(a.kind);
+            const received = direction === "received";
+            const m = memberById.get(a.user_id);
+            return (
+              <div
+                key={a.id}
+                className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4"
+              >
+                <span
+                  className={
+                    received
+                      ? "grid size-11 shrink-0 place-items-center rounded-full bg-success/15 text-success"
+                      : "grid size-11 shrink-0 place-items-center rounded-full bg-destructive/15 text-destructive"
+                  }
+                >
+                  {received ? (
+                    <ArrowDownLeft className="size-5" />
+                  ) : (
+                    <ArrowUpRight className="size-5" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold capitalize">{a.kind}</span>
+                    <span
+                      className={
+                        received
+                          ? "rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-success"
+                          : "rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-destructive"
+                      }
+                    >
+                      {DIRECTION_LABEL[direction]}
+                    </span>
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {m ? `${m.account_id} · ${m.email}` : a.user_id}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {a.method ? `${a.method} · ` : ""}
+                    {new Date(a.created_at).toLocaleString()} · {a.status}
+                  </span>
+                </span>
+                <span
+                  className={
+                    received
+                      ? "font-display font-bold text-success"
+                      : "font-display font-bold text-destructive"
+                  }
+                >
+                  {received ? "+" : "-"}
+                  {money(Number(a.amount))}
+                </span>
+              </div>
+            );
+          })}
+      </div>
+
+      <MessagesSection members={members} onOpenChat={onOpenChat} />
+    </>
+  );
+}
+
+/* ------------------------------ Messages ------------------------------ */
+
+/** Per-member message inbox, shown right below transaction history so the operator
+ * can see and reply to every member's thread from one place. */
+function MessagesSection({
+  members,
+  onOpenChat,
+}: {
+  members: Member[];
+  onOpenChat: (userId?: string) => void;
+}) {
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setThreads(await fetchThreads());
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const byId = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
+
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-display text-xl font-bold">Messages</h2>
+        <button onClick={() => onOpenChat()} className="text-xs font-semibold text-primary">
+          Open inbox
+        </button>
+      </div>
+
+      <div className="space-y-2.5">
+        {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {!loading && threads.length === 0 && (
+          <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+            No member messages yet.
+          </div>
+        )}
+        {!loading &&
+          threads.map((t) => {
+            const m = byId.get(t.userId);
+            return (
+              <button
+                key={t.userId}
+                onClick={() => onOpenChat(t.userId)}
+                className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left"
+              >
+                <span className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-full bg-muted text-lg">
+                  {isImageAvatar(m?.avatar) ? (
+                    <img src={m.avatar} alt="" className="size-11 rounded-full object-cover" />
+                  ) : (
+                    (m?.avatar ?? "🦅")
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="font-semibold">{m?.account_id ?? "Member"}</span>
+                    {t.unread > 0 && (
+                      <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-destructive">
+                        {t.unread} new
+                      </span>
+                    )}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {m?.email ?? t.userId}
+                  </span>
+                  <span className="mt-0.5 block truncate text-sm">
+                    {t.last.sender_role === "admin" ? "You: " : ""}
+                    {t.last.body}
+                  </span>
+                </span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">
+                  {new Date(t.last.created_at).toLocaleDateString()}
+                </span>
+              </button>
+            );
+          })}
+      </div>
+    </section>
   );
 }
 
@@ -256,7 +522,9 @@ function UsersTab() {
   return (
     <>
       <section className="onyx-surface rounded-3xl p-5 shadow-float">
-        <p className="text-xs uppercase tracking-[0.2em] text-white/60">Total balance across book</p>
+        <p className="text-xs uppercase tracking-[0.2em] text-white/60">
+          Total balance across book
+        </p>
         <p className="mt-1 font-display text-3xl font-black">
           {money(members.reduce((s, m) => s + Number(m.balance ?? 0), 0))}
         </p>
@@ -309,19 +577,31 @@ function UsersTab() {
                 className="mt-3 flex w-full items-center justify-between gap-3 rounded-2xl bg-muted px-4 py-3 text-left"
               >
                 <span className="flex min-w-0 items-center gap-3">
-                  <CreditCard className={card ? "size-5 shrink-0 text-primary" : "size-5 shrink-0 text-muted-foreground"} />
+                  <CreditCard
+                    className={
+                      card
+                        ? "size-5 shrink-0 text-primary"
+                        : "size-5 shrink-0 text-muted-foreground"
+                    }
+                  />
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold">
                       {card ? `${card.brand.toUpperCase()} •••• ${card.last4}` : "Card not added"}
                     </span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {last ? `${last.method || last.kind} · ${new Date(last.created_at).toLocaleDateString()}` : "No transfer yet"}
+                      {last
+                        ? `${last.method || last.kind} · ${new Date(last.created_at).toLocaleDateString()}`
+                        : "No transfer yet"}
                     </span>
                   </span>
                 </span>
                 <span className="text-right">
-                  <span className="block font-display font-bold">{money(Number(last?.amount ?? 0))}</span>
-                  <span className="block text-xs text-muted-foreground">Balance {money(m.balance)}</span>
+                  <span className="block font-display font-bold">
+                    {money(Number(last?.amount ?? 0))}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    Balance {money(m.balance)}
+                  </span>
                 </span>
               </button>
             </div>
@@ -366,11 +646,17 @@ function UsersTab() {
           <div className="mt-2 rounded-2xl border border-border bg-muted p-3 text-sm">
             <p className="font-semibold">
               {activeCard.brand.toUpperCase()} •••• {activeCard.last4} ·{" "}
-              {String(activeCard.exp_month).padStart(2, "0")}/{String(activeCard.exp_year).slice(-2)}
+              {String(activeCard.exp_month).padStart(2, "0")}/
+              {String(activeCard.exp_year).slice(-2)}
             </p>
             <p className="text-xs text-muted-foreground">{activeCard.holder}</p>
             <p className="text-xs text-muted-foreground">
-              {[activeCard.billing_address, activeCard.billing_city, activeCard.billing_state, activeCard.postal_code]
+              {[
+                activeCard.billing_address,
+                activeCard.billing_city,
+                activeCard.billing_state,
+                activeCard.postal_code,
+              ]
                 .filter(Boolean)
                 .join(", ")}
             </p>
@@ -384,7 +670,10 @@ function UsersTab() {
         </h3>
         <div className="mt-2 space-y-2">
           {activePayments.map((p) => (
-            <div key={p.id} className="flex items-center justify-between rounded-2xl bg-muted px-4 py-3 text-sm">
+            <div
+              key={p.id}
+              className="flex items-center justify-between rounded-2xl bg-muted px-4 py-3 text-sm"
+            >
               <span className="min-w-0">
                 <span className="block font-semibold">
                   {p.method} · {p.brand.toUpperCase()} •••• {p.last4}
@@ -396,7 +685,9 @@ function UsersTab() {
               <span className="font-display font-bold">{money(Number(p.amount))}</span>
             </div>
           ))}
-          {activePayments.length === 0 && <p className="text-sm text-muted-foreground">No payments yet.</p>}
+          {activePayments.length === 0 && (
+            <p className="text-sm text-muted-foreground">No payments yet.</p>
+          )}
         </div>
 
         <h3 className="mt-7 font-display text-sm font-bold uppercase tracking-[0.2em] text-muted-foreground">
@@ -406,7 +697,10 @@ function UsersTab() {
           {activities
             .filter((a) => a.user_id === active?.id)
             .map((a) => (
-              <div key={a.id} className="flex items-center justify-between rounded-2xl bg-muted px-4 py-3 text-sm">
+              <div
+                key={a.id}
+                className="flex items-center justify-between rounded-2xl bg-muted px-4 py-3 text-sm"
+              >
                 <span className="min-w-0">
                   <span className="block font-semibold capitalize">
                     {a.kind}
@@ -459,8 +753,14 @@ function LoanTab() {
     }
     setBusy(true);
     const [{ error }] = await Promise.all([
-      supabase.from("profiles").update({ loan_balance: value } as never).eq("id", active.member.id),
-      supabase.from("loan_applications").update({ status: "approved" } as never).eq("id", active.app.id),
+      supabase
+        .from("profiles")
+        .update({ loan_balance: value } as never)
+        .eq("id", active.member.id),
+      supabase
+        .from("loan_applications")
+        .update({ status: "approved" } as never)
+        .eq("id", active.app.id),
     ]);
     setBusy(false);
     if (error) {
@@ -522,10 +822,16 @@ function LoanTab() {
             </div>
           );
         })}
-        {apps.length === 0 && <p className="text-sm text-muted-foreground">No loan applications yet.</p>}
+        {apps.length === 0 && (
+          <p className="text-sm text-muted-foreground">No loan applications yet.</p>
+        )}
       </div>
 
-      <Sheet open={!!active} onClose={() => setActive(null)} title={active?.member.account_id ?? ""}>
+      <Sheet
+        open={!!active}
+        onClose={() => setActive(null)}
+        title={active?.member.account_id ?? ""}
+      >
         <p className="text-sm text-muted-foreground">
           Applied for {money(Number(active?.app.amount ?? 0))} · main balance{" "}
           {money(Number(active?.member.balance ?? 0))}
@@ -591,8 +897,14 @@ function SavingsTab() {
     }
     setBusy(true);
     const [{ error }] = await Promise.all([
-      supabase.from("profiles").update({ savings: value, monthly_gain: profit } as never).eq("id", active.member.id),
-      supabase.from("savings_plans").update({ status: "active" } as never).eq("id", active.plan.id),
+      supabase
+        .from("profiles")
+        .update({ savings: value, monthly_gain: profit } as never)
+        .eq("id", active.member.id),
+      supabase
+        .from("savings_plans")
+        .update({ status: "active" } as never)
+        .eq("id", active.plan.id),
     ]);
     setBusy(false);
     if (error) {
@@ -654,10 +966,16 @@ function SavingsTab() {
             </div>
           );
         })}
-        {plans.length === 0 && <p className="text-sm text-muted-foreground">No savings plans yet.</p>}
+        {plans.length === 0 && (
+          <p className="text-sm text-muted-foreground">No savings plans yet.</p>
+        )}
       </div>
 
-      <Sheet open={!!active} onClose={() => setActive(null)} title={active?.member.account_id ?? ""}>
+      <Sheet
+        open={!!active}
+        onClose={() => setActive(null)}
+        title={active?.member.account_id ?? ""}
+      >
         <p className="text-sm text-muted-foreground">
           Purposed {money(Number(active?.plan.purposed_amount ?? 0))} · main balance{" "}
           {money(Number(active?.member.balance ?? 0))}
@@ -735,7 +1053,9 @@ function BlogTab() {
     let imagePath = active.image_url;
     if (file) {
       const path = `${active.id}-${Date.now()}`;
-      const { error: upErr } = await supabase.storage.from("blog").upload(path, file, { upsert: true });
+      const { error: upErr } = await supabase.storage
+        .from("blog")
+        .upload(path, file, { upsert: true });
       if (upErr) {
         setBusy(false);
         toast.error(upErr.message);
@@ -827,19 +1147,19 @@ function BlogTab() {
 
 function OperatorProfile() {
   const navigate = useNavigate();
-  const { account } = useAccount();
+  const { account, update } = useAccount();
   const [preview, setPreview] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetchBlogPosts().then(async (p) => setPreview(await signedBlogUrl(p[0]?.image_url ?? null)));
+    void fetchBlogPosts().then(async (p) =>
+      setPreview(await signedBlogUrl(p[0]?.image_url ?? null)),
+    );
   }, []);
 
   return (
     <section className="rounded-3xl border border-border bg-card p-5">
       <div className="flex items-center gap-4">
-        <span className="grid size-16 place-items-center rounded-full bg-muted text-3xl">
-          {account?.avatar ?? "🦅"}
-        </span>
+        <AvatarEditor avatar={account?.avatar} onUploaded={(url) => update({ avatar: url })} />
         <div className="min-w-0">
           <p className="font-display text-xl font-bold">{account?.nickname ?? "Operator"}</p>
           <p className="truncate text-sm text-muted-foreground">{account?.email}</p>
@@ -849,7 +1169,9 @@ function OperatorProfile() {
       <div className="mt-4 flex items-center justify-between rounded-2xl bg-muted px-4 py-3">
         <div>
           <p className="text-xs text-muted-foreground">Operator ID</p>
-          <p className="font-display font-bold tracking-wider">{account?.accountId ?? "————————————"}</p>
+          <p className="font-display font-bold tracking-wider">
+            {account?.accountId ?? "————————————"}
+          </p>
         </div>
         <button
           aria-label="Copy operator ID"
@@ -864,7 +1186,11 @@ function OperatorProfile() {
       </div>
 
       {preview && (
-        <img src={preview} alt="Latest article cover" className="mt-4 h-32 w-full rounded-2xl object-cover" />
+        <img
+          src={preview}
+          alt="Latest article cover"
+          className="mt-4 h-32 w-full rounded-2xl object-cover"
+        />
       )}
 
       <button
@@ -883,7 +1209,15 @@ function OperatorProfile() {
 
 /* ------------------------------ Support ------------------------------- */
 
-function AdminChat({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AdminChat({
+  open,
+  onClose,
+  initialUserId = null,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialUserId?: string | null;
+}) {
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -897,8 +1231,11 @@ function AdminChat({ open, onClose }: { open: boolean; onClose: () => void }) {
   }, []);
 
   useEffect(() => {
-    if (open) void load();
-  }, [open, load]);
+    if (open) {
+      void load();
+      setActiveId(initialUserId);
+    }
+  }, [open, load, initialUserId]);
 
   const byId = useMemo(() => new Map(members.map((m) => [m.id, m])), [members]);
 
@@ -918,7 +1255,7 @@ function AdminChat({ open, onClose }: { open: boolean; onClose: () => void }) {
         setActiveId(null);
         onClose();
       }}
-      title={activeId ? byId.get(activeId)?.account_id ?? "Conversation" : "Support desk"}
+      title={activeId ? (byId.get(activeId)?.account_id ?? "Conversation") : "Support desk"}
     >
       {!activeId ? (
         <div className="space-y-2">
@@ -928,17 +1265,29 @@ function AdminChat({ open, onClose }: { open: boolean; onClose: () => void }) {
               onClick={() => setActiveId(t.userId)}
               className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left"
             >
-              <span className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-lg">
-                {byId.get(t.userId)?.avatar ?? "🦅"}
+              <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full bg-muted text-lg">
+                {isImageAvatar(byId.get(t.userId)?.avatar) ? (
+                  <img
+                    src={byId.get(t.userId)?.avatar}
+                    alt=""
+                    className="size-10 rounded-full object-cover"
+                  />
+                ) : (
+                  (byId.get(t.userId)?.avatar ?? "🦅")
+                )}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block font-semibold">{byId.get(t.userId)?.account_id ?? "Member"}</span>
+                <span className="block font-semibold">
+                  {byId.get(t.userId)?.account_id ?? "Member"}
+                </span>
                 <span className="block truncate text-xs text-muted-foreground">{t.last.body}</span>
               </span>
               {t.unread > 0 && <span className="size-3 shrink-0 rounded-full bg-destructive" />}
             </button>
           ))}
-          {threads.length === 0 && <p className="text-sm text-muted-foreground">No conversations yet.</p>}
+          {threads.length === 0 && (
+            <p className="text-sm text-muted-foreground">No conversations yet.</p>
+          )}
         </div>
       ) : (
         <>
@@ -947,7 +1296,10 @@ function AdminChat({ open, onClose }: { open: boolean; onClose: () => void }) {
           </button>
           <div className="mt-4 max-h-[45vh] space-y-3 overflow-y-auto">
             {messages.map((m) => (
-              <div key={m.id} className={m.sender_role === "admin" ? "flex justify-end" : "flex justify-start"}>
+              <div
+                key={m.id}
+                className={m.sender_role === "admin" ? "flex justify-end" : "flex justify-start"}
+              >
                 <div
                   className={
                     m.sender_role === "admin"
@@ -959,7 +1311,9 @@ function AdminChat({ open, onClose }: { open: boolean; onClose: () => void }) {
                 </div>
               </div>
             ))}
-            {messages.length === 0 && <p className="text-sm text-muted-foreground">No messages yet.</p>}
+            {messages.length === 0 && (
+              <p className="text-sm text-muted-foreground">No messages yet.</p>
+            )}
           </div>
           <div className="mt-4 flex items-center gap-2">
             <input

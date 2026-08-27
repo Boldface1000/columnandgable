@@ -111,6 +111,22 @@ export const cryptoDepositSchema = z.object({
   amount: amountSchema(100),
 });
 
+/** Withdrawal payout to a member-supplied wallet — "other" requires a free-text asset name. */
+export const withdrawCryptoSchema = (max: number) =>
+  z
+    .object({
+      asset: z.enum(["usdt", "btc", "eth", "other"], {
+        errorMap: () => ({ message: "Choose an asset" }),
+      }),
+      assetName: z.string().trim().max(40, { message: "Asset name is too long" }).optional(),
+      address: walletAddressSchema,
+      amount: amountSchema(10).max(max, { message: "Amount exceeds your available balance" }),
+    })
+    .refine((v) => v.asset !== "other" || (v.assetName?.trim().length ?? 0) >= 2, {
+      message: "Enter the asset name",
+      path: ["assetName"],
+    });
+
 
 /** Runs a zod schema and returns a field → message map for inline errors. */
 export function collectErrors(schema: z.ZodTypeAny, value: unknown): Record<string, string> {

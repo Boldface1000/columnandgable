@@ -21,3 +21,9 @@ Thumbs.db
 # logs
 npm-debug.log*
 *.log
+
+# TanStack Router (auto-generated)
+src/routeTree.gen.ts
+
+# Supabase CLI local state
+supabase/.temp/

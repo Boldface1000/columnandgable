@@ -5,7 +5,11 @@ export const Route = createFileRoute("/contact")({
   head: () => ({
     meta: [
       { title: "Contact Us — Column & Gable" },
-      { name: "description", content: "Reach the Column & Gable member desk by phone, email or at our Boston head office." },
+      {
+        name: "description",
+        content:
+          "Reach the Column & Gable member desk by phone, email or at our Boston head office.",
+      },
       { property: "og:title", content: "Contact Us — Column & Gable" },
       { property: "og:description", content: "Member desk phone, email and Boston head office." },
     ],
@@ -25,7 +29,10 @@ function Contact() {
       </header>
 
       <div className="space-y-4 px-6 pt-6">
-        <Card icon={<Building2 className="size-5 text-primary" />} title="Head office — New England">
+        <Card
+          icon={<Building2 className="size-5 text-primary" />}
+          title="Head office — New England"
+        >
           One Federal Street, 27th Floor
           <br />
           Boston, MA 02110, United States
@@ -44,6 +51,8 @@ function Contact() {
         </Card>
         <Card icon={<Mail className="size-5 text-primary" />} title="Email">
           <a href="mailto:support@columnandgable.com">support@columnandgable.com</a>
+          <br />
+          <a href="mailto:support.columnandgable@gmail.com">support.columnandgable@gmail.com</a>
         </Card>
       </div>
     </div>

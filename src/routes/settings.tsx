@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Copy, Moon, Sun, Mail, Info, LogOut, Phone, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { AvatarEditor } from "@/components/AvatarEditor";
 import { useAccount } from "@/lib/app-state";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuthGuard } from "@/lib/auth-guard";
@@ -25,7 +26,7 @@ export const Route = createFileRoute("/settings")({
 function SettingsPage() {
   const { authed } = useAuthGuard();
   const navigate = useNavigate();
-  const { account } = useAccount();
+  const { account, update } = useAccount();
   const [dark, setDark] = useState(
     typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
   );
@@ -43,9 +44,7 @@ function SettingsPage() {
     <AppShell variant="settings" title="Settings">
       <section className="rounded-3xl border border-border bg-card p-5">
         <div className="flex items-center gap-4">
-          <span className="grid size-16 place-items-center rounded-full bg-muted text-3xl">
-            {account?.avatar ?? "🦅"}
-          </span>
+          <AvatarEditor avatar={account?.avatar} onUploaded={(url) => update({ avatar: url })} />
           <div className="min-w-0">
             <p className="font-display text-xl font-bold">{account?.nickname ?? "Guest"}</p>
             <p className="truncate text-sm text-muted-foreground">{account?.email ?? "not signed in"}</p>

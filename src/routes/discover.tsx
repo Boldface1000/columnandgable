@@ -10,12 +10,14 @@ import {
   CreditCard,
   Copy,
   Gift,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import {
   useAccount,
   useCards,
+  useLiveGrowth,
   buildLeaderboard,
   useLiveQuotes,
   fetchBlogPosts,
@@ -48,10 +50,88 @@ const FEEDS = [
   { who: "Sana Bello", text: "Balanced portfolio holding 21.4% this week. Steady.", when: "3h" },
 ];
 
+/* --------------------------- Display currency --------------------------- */
+/** All balances are stored/computed in USD. These are display-only
+ * conversion rates for rendering the portfolio in another currency.
+ * TODO: wire this up to a live FX/BTC price feed — these are static
+ * placeholders and will drift from real market rates over time. */
+const CURRENCY_OPTIONS = [
+  { key: "usd", label: "USD", symbol: "$", rate: 1, decimals: 2 },
+  { key: "gbp", label: "GBP", symbol: "£", rate: 0.79, decimals: 2 },
+  { key: "btc", label: "BTC", symbol: "₿", rate: 1 / 64000, decimals: 6 },
+] as const;
+
+type CurrencyKey = (typeof CURRENCY_OPTIONS)[number]["key"];
+
+const CURRENCY_STORAGE_KEY = "cg.displayCurrency";
+
+function loadStoredCurrency(): CurrencyKey {
+  if (typeof window === "undefined") return "usd";
+  const raw = localStorage.getItem(CURRENCY_STORAGE_KEY);
+  return CURRENCY_OPTIONS.some((c) => c.key === raw) ? (raw as CurrencyKey) : "usd";
+}
+
+function formatInCurrency(amountUsd: number, currency: CurrencyKey) {
+  const opt = CURRENCY_OPTIONS.find((c) => c.key === currency) ?? CURRENCY_OPTIONS[0];
+  const converted = (amountUsd || 0) * opt.rate;
+  return `${opt.symbol}${converted.toLocaleString(undefined, {
+    minimumFractionDigits: opt.decimals,
+    maximumFractionDigits: opt.decimals,
+  })}`;
+}
+
+/** Segmented radio control for choosing USD / GBP / BTC display. */
+function CurrencyToggle({
+  value,
+  onChange,
+}: {
+  value: CurrencyKey;
+  onChange: (c: CurrencyKey) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Display currency"
+      className="mt-3 inline-flex rounded-full bg-white/10 p-1"
+    >
+      {CURRENCY_OPTIONS.map((opt) => {
+        const active = opt.key === value;
+        return (
+          <button
+            key={opt.key}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(opt.key)}
+            className={
+              active
+                ? "gold-surface rounded-full px-3.5 py-1.5 text-xs font-bold"
+                : "rounded-full px-3.5 py-1.5 text-xs font-semibold text-white/70"
+            }
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function Discover() {
   const { authed } = useAuthGuard();
   const { account } = useAccount();
+  const { gained, balance } = useLiveGrowth(account);
   const { cards } = useCards();
+  const [currency, setCurrency] = useState<CurrencyKey>(() => loadStoredCurrency());
+
+  const handleCurrencyChange = (c: CurrencyKey) => {
+    setCurrency(c);
+    try {
+      localStorage.setItem(CURRENCY_STORAGE_KEY, c);
+    } catch {
+      /* ignore storage failures */
+    }
+  };
 
   const leaders = buildLeaderboard(5);
   const { quotes } = useLiveQuotes();
@@ -111,14 +191,13 @@ function Discover() {
       <section className="onyx-surface rounded-3xl p-5 shadow-float">
         <p className="text-xs uppercase tracking-[0.2em] text-white/60">Available balance</p>
         <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <p className="font-display text-4xl font-black">
-            ${(account?.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </p>
+          <p className="font-display text-4xl font-black">{formatInCurrency(balance, currency)}</p>
           <p className="font-display text-sm font-bold text-success">
-            +${(account?.monthlyGain ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            <span className="ml-1 font-medium text-white/60">gained this month</span>
+            +{formatInCurrency(gained, currency)}
+            <span className="ml-1 font-medium text-white/60">gained</span>
           </p>
         </div>
+        <CurrencyToggle value={currency} onChange={handleCurrencyChange} />
 
         <div className="mt-5 space-y-2.5">
           <Link
@@ -134,10 +213,11 @@ function Discover() {
             <ArrowUpRight className="size-5" /> Withdraw
           </Link>
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-2.5">
+        <div className="mt-3 grid grid-cols-4 gap-2.5">
           <Quick to="/retirement" icon={<Landmark className="size-5" />} label="401(k)" />
           <Quick to="/savings" icon={<PiggyBank className="size-5" />} label="Savings" />
           <Quick to="/stocks" icon={<Flame className="size-5" />} label="Stocks" />
+          <Quick to="/history" icon={<History className="size-5" />} label="History" />
         </div>
       </section>
 

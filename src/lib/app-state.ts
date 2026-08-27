@@ -19,6 +19,8 @@ export type Account = {
   cryptoWallet: string;
   sectors: string[];
   onboarded: boolean;
+  interestRate: number;
+  updatedAt: string;
 };
 
 export const AVATARS = ["🦅", "🐺", "🦁", "🐧", "🦉", "🐢", "🦊", "🐬", "🦋", "🐝", "🦒", "🐳"];
@@ -38,6 +40,8 @@ export type ProfileRow = {
   crypto_wallet: string;
   sectors: string[] | null;
   onboarded: boolean;
+  interest_rate: number;
+  updated_at: string;
 };
 
 export function toAccount(row: ProfileRow): Account {
@@ -56,6 +60,8 @@ export function toAccount(row: ProfileRow): Account {
     cryptoWallet: row.crypto_wallet ?? "",
     sectors: row.sectors ?? [],
     onboarded: row.onboarded,
+    interestRate: Number(row.interest_rate ?? 15),
+    updatedAt: row.updated_at,
   };
 }
 
@@ -118,6 +124,62 @@ export function useAccount() {
   );
 
   return { account, ready, update, reload: load };
+}
+
+/** True when a stored avatar value is an uploaded photo URL rather than an emoji. */
+export function isImageAvatar(value: string | null | undefined): value is string {
+  return !!value && /^https?:\/\//.test(value);
+}
+
+const AVATAR_BUCKET = "avatars";
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+const AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+/** Uploads a profile photo to the `avatars` storage bucket and returns its public URL. */
+export async function uploadAvatar(file: File): Promise<string> {
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error("You must be signed in to update your photo");
+  if (!AVATAR_TYPES.includes(file.type)) throw new Error("Use a JPEG, PNG or WEBP image");
+  if (file.size > AVATAR_MAX_BYTES) throw new Error("Image must be under 5MB");
+
+  const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const path = `${auth.user.id}/avatar.${ext}`;
+
+  const { error } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, file, { upsert: true, contentType: file.type });
+  if (error) throw error;
+
+  const { data } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+  return `${data.publicUrl}?v=${Date.now()}`; // cache-bust so the new photo shows immediately
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Algorithmic counter for the Discover hero: the balance an operator last set keeps
+ * "growing" second-by-second toward `interestRate`% of itself over a 7-day cycle,
+ * anchored to `updated_at` (touched automatically whenever an admin saves the account
+ * in /operations). The moment an admin adds a new balance, `updated_at` resets and the
+ * counter starts a fresh cycle from the new base — so gain and total balance always
+ * stay in lockstep with what the admin last set.
+ */
+export function useLiveGrowth(account: Account | null) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!account) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [account]);
+
+  if (!account) return { gained: 0, balance: 0 };
+
+  const anchor = new Date(account.updatedAt).getTime();
+  const elapsed = Math.max(0, Math.min(now - anchor, WEEK_MS));
+  const gained = account.balance * (account.interestRate / 100) * (elapsed / WEEK_MS);
+
+  return { gained, balance: account.balance + gained };
 }
 
 export function useIsAdmin() {
@@ -397,6 +459,28 @@ export async function fetchActivities(userId: string, kinds?: ActivityKind[]) {
   const { data } = await query;
   return (data ?? []) as Activity[];
 }
+
+/** Admin-only: every member's activity ledger, newest first, for the operations History tab. */
+export async function fetchAllActivities(limit = 500) {
+  const { data } = await supabase
+    .from("activities")
+    .select(ACTIVITY_FIELDS)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as Activity[];
+}
+
+export type ActivityDirection = "received" | "sent";
+
+/** Whether an activity kind represents money coming into the member's account or leaving it. */
+export function directionOf(kind: ActivityKind): ActivityDirection {
+  return kind === "deposit" || kind === "loan" ? "received" : "sent";
+}
+
+export const DIRECTION_LABEL: Record<ActivityDirection, string> = {
+  received: "Received",
+  sent: "Sent",
+};
 
 /** Admin read of the cards a specific member has stored. */
 export async function fetchMemberCards(userId: string) {

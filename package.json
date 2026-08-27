@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "supabase": "npx supabase gen types typescript --project-id ndvccpyirgzfntbfnhas > src/types/database.types.ts",
-    "deploy": "npx wrangler pages deploy dist/client --project-name=columnandgable"
+    "deploy": "npm run build && npx wrangler pages deploy dist/client --project-name=columnandgable"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

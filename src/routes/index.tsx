@@ -12,11 +12,12 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "Column & Gable — Best Choice You Ever Made" },
       {
         property: "og:description",
-        content: "Weekly compounding, insured portfolios and a legacy account built for every generation.",
+        content:
+          "Weekly compounding, insured portfolios and a legacy account built for every generation.",
       },
     ],
   }),
   beforeLoad: () => {
-    throw redirect({ to: "/login" });
+    throw redirect({ to: "/onboarding" });
   },
 });

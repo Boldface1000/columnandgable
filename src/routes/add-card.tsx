@@ -1,6 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowLeft, X, RefreshCw, CreditCard, Lock, Info, ShieldCheck, RotateCw } from "lucide-react";
+import {
+  ArrowLeft,
+  X,
+  RefreshCw,
+  CreditCard,
+  Lock,
+  Info,
+  ShieldCheck,
+  RotateCw,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cardSchema, collectErrors } from "@/lib/validators";
 import { saveCard, useCards, createPayment, useAccount, type Card } from "@/lib/app-state";
@@ -73,7 +82,10 @@ function AddCard() {
           </span>
           Card
         </span>
-        <button onClick={() => navigate({ to: "/add-money" })} className="font-semibold text-destructive">
+        <button
+          onClick={() => navigate({ to: "/add-money" })}
+          className="font-semibold text-destructive"
+        >
           Cancel
         </button>
       </div>
@@ -118,8 +130,8 @@ function PayWithCard({
   const value = Number(amount) || 0;
 
   const pay = async () => {
-    if (value < 10) {
-      toast.error("Minimum payment is $10");
+    if (value < 100) {
+      toast.error("Minimum deposit is $100");
       return;
     }
     setBusy(true);
@@ -140,7 +152,9 @@ function PayWithCard({
           <span className="grid size-11 shrink-0 place-items-center rounded-full bg-foreground font-display text-sm font-black text-background">
             C&amp;G
           </span>
-          <span className="truncate text-sm text-muted-foreground">{reference || "Column & Gable"}</span>
+          <span className="truncate text-sm text-muted-foreground">
+            {reference || "Column & Gable"}
+          </span>
         </span>
         <span className="text-right">
           <span className="block">
@@ -155,7 +169,9 @@ function PayWithCard({
 
       <p className="py-6 text-center text-lg">Confirm the amount to pay</p>
 
-      <label className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Amount</label>
+      <label className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        Amount
+      </label>
       <div className="mt-1 flex items-center gap-3 border-b border-border pb-3">
         <span className="grid size-7 place-items-center rounded bg-primary text-xs font-black text-primary-foreground">
           $
@@ -175,7 +191,8 @@ function PayWithCard({
           <span className="flex items-center gap-3">
             <span
               className={
-                (BRANDS.find((b) => b.id === card.brand)?.className ?? "bg-foreground text-background") +
+                (BRANDS.find((b) => b.id === card.brand)?.className ??
+                  "bg-foreground text-background") +
                 " rounded px-2 py-1 text-[10px] font-black tracking-wider"
               }
             >
@@ -215,7 +232,7 @@ function PayWithCard({
 
       <button
         onClick={() => void pay()}
-        disabled={busy || value < 10}
+        disabled={busy || value < 100}
         className="gold-surface mt-7 flex h-14 w-full items-center justify-center rounded-xl font-bold shadow-gold disabled:opacity-40 disabled:shadow-none"
       >
         {busy ? "Processing…" : `Pay USD ${value.toFixed(2)}`}
@@ -260,7 +277,8 @@ function NewCardForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
-  const set = (key: keyof typeof form) => (value: string) => setForm((f) => ({ ...f, [key]: value }));
+  const set = (key: keyof typeof form) => (value: string) =>
+    setForm((f) => ({ ...f, [key]: value }));
 
   const submit = async () => {
     const found = collectErrors(cardSchema, form);
@@ -444,7 +462,8 @@ function NewCardForm({
       </button>
 
       <p className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-        <ShieldCheck className="size-3.5 text-primary" /> Powered by Stripe · Certified by FDIC · CFPB · IMF
+        <ShieldCheck className="size-3.5 text-primary" /> Powered by Stripe · Certified by FDIC ·
+        CFPB · IMF
       </p>
 
       {hasCard && (
