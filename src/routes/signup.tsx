@@ -5,6 +5,8 @@ import { Eye, EyeOff, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { AVATARS } from "@/lib/app-state";
 import { supabase } from "@/integrations/supabase/client";
+import { PinPad } from "@/components/PinPad";
+import { setPin as setPinRemote } from "@/lib/pin.functions";
 
 export const Route = createFileRoute("/signup")({
   head: () => ({
@@ -38,9 +40,9 @@ const pwSchema = z
 
 function SignUp() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<"credentials" | "verify" | "2fa" | "sectors" | "profile">(
-    "credentials",
-  );
+  const [step, setStep] = useState<
+    "credentials" | "verify" | "2fa" | "sectors" | "profile" | "pin"
+  >("credentials");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -51,6 +53,11 @@ function SignUp() {
   const [sectors, setSectors] = useState<string[]>([]);
   const [nickname, setNickname] = useState("");
   const [avatar, setAvatar] = useState(AVATARS[0]!);
+  const [createPin, setCreatePin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [pinStage, setPinStage] = useState<"create" | "confirm">("create");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
 
   const emailOk = z.string().email().safeParse(email).success;
   const pwResult = pwSchema.safeParse(password);
@@ -106,6 +113,46 @@ function SignUp() {
     navigate({ to: "/discover" });
   };
 
+  const submitPinDigit = (next: string) => {
+    setPinError(null);
+    if (pinStage === "create") setCreatePin(next);
+    else setConfirmPin(next);
+  };
+
+  const confirmPinAndFinish = async (confirmValue: string) => {
+    if (createPin !== confirmValue) {
+      setPinError("PINs don't match — try again.");
+      setConfirmPin("");
+      setPinStage("create");
+      setCreatePin("");
+      return;
+    }
+    setPinBusy(true);
+    const { data: session } = await supabase.auth.getSession();
+    const accessToken = session.session?.access_token;
+    if (!accessToken) {
+      setPinBusy(false);
+      toast.error("Confirm your email, then log in to finish your profile");
+      navigate({ to: "/login" });
+      return;
+    }
+    try {
+      await setPinRemote({ data: { accessToken, pin: createPin } });
+    } catch (e) {
+      setPinBusy(false);
+      toast.error(e instanceof Error ? e.message : "Couldn't save your PIN");
+      return;
+    }
+    setPinBusy(false);
+    await finish();
+  };
+
+  // Once the confirm-pin box fills to 6 digits, resolve it automatically.
+  const onConfirmPinChange = (next: string) => {
+    setConfirmPin(next);
+    if (next.length === 6) void confirmPinAndFinish(next);
+  };
+
 
   return (
     <div className="min-h-screen bg-background px-6 pb-12 pt-12">
@@ -115,6 +162,7 @@ function SignUp() {
         {step === "2fa" && "Google Authenticator"}
         {step === "sectors" && "Sectors"}
         {step === "profile" && "Profile"}
+        {step === "pin" && "App PIN"}
       </h1>
 
       {step === "credentials" && (
@@ -309,11 +357,44 @@ function SignUp() {
           </div>
 
           <button
-            onClick={finish}
+            onClick={() => setStep("pin")}
             className="gold-surface mt-10 flex h-14 w-full items-center justify-center rounded-full font-bold shadow-gold"
           >
-            Submit
+            Continue
           </button>
+        </div>
+      )}
+
+      {step === "pin" && (
+        <div className="animate-rise mt-6">
+          <p className="font-display text-lg font-bold">
+            {pinStage === "create" ? "Create a 6-digit PIN" : "Confirm your PIN"}
+          </p>
+          <p className="text-muted-foreground">
+            {pinStage === "create"
+              ? "You'll use this to quickly unlock the app — separate from your password."
+              : "Enter it once more to confirm."}
+          </p>
+          <div className="mt-8">
+            <PinPad
+              value={pinStage === "create" ? createPin : confirmPin}
+              onChange={pinStage === "create" ? submitPinDigit : onConfirmPinChange}
+              warnIfWeak={pinStage === "create"}
+              error={pinError}
+            />
+          </div>
+          {pinStage === "create" && (
+            <button
+              disabled={createPin.length !== 6}
+              onClick={() => setPinStage("confirm")}
+              className="gold-surface mt-10 flex h-14 w-full items-center justify-center rounded-full font-bold shadow-gold disabled:opacity-40 disabled:shadow-none"
+            >
+              Continue
+            </button>
+          )}
+          {pinBusy && (
+            <p className="mt-4 text-center text-sm text-muted-foreground">Saving your PIN…</p>
+          )}
         </div>
       )}
     </div>

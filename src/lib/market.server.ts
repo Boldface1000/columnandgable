@@ -104,18 +104,73 @@ export const SYMBOLS: Entry[] = [
   { ticker: "DUK", name: "Duke Energy", symbol: "DUK" },
   { ticker: "UPS", name: "United Parcel Service", symbol: "UPS" },
   { ticker: "SHW", name: "Sherwin-Williams", symbol: "SHW" },
+  { ticker: "NOC", name: "Northrop Grumman", symbol: "NOC" },
+  { ticker: "TGT", name: "Target", symbol: "TGT" },
+  { ticker: "MO", name: "Altria Group", symbol: "MO" },
+  { ticker: "ITW", name: "Illinois Tool Works", symbol: "ITW" },
+  { ticker: "APH", name: "Amphenol", symbol: "APH" },
+  { ticker: "CMG", name: "Chipotle Mexican Grill", symbol: "CMG" },
+  { ticker: "MMM", name: "3M", symbol: "MMM" },
+  { ticker: "FDX", name: "FedEx", symbol: "FDX" },
+  { ticker: "CME", name: "CME Group", symbol: "CME" },
+  { ticker: "ICE", name: "Intercontinental Exchange", symbol: "ICE" },
+  { ticker: "SNPS", name: "Synopsys", symbol: "SNPS" },
+  { ticker: "CDNS", name: "Cadence Design Systems", symbol: "CDNS" },
+  { ticker: "APD", name: "Air Products", symbol: "APD" },
+  { ticker: "REGN", name: "Regeneron Pharmaceuticals", symbol: "REGN" },
+  { ticker: "EQIX", name: "Equinix", symbol: "EQIX" },
+  { ticker: "WM", name: "Waste Management", symbol: "WM" },
+  { ticker: "CTAS", name: "Cintas", symbol: "CTAS" },
+  { ticker: "AON", name: "Aon", symbol: "AON" },
+  { ticker: "MCK", name: "McKesson", symbol: "MCK" },
+  { ticker: "ROP", name: "Roper Technologies", symbol: "ROP" },
+  { ticker: "PSA", name: "Public Storage", symbol: "PSA" },
+  { ticker: "TT", name: "Trane Technologies", symbol: "TT" },
+  { ticker: "MSI", name: "Motorola Solutions", symbol: "MSI" },
+  { ticker: "COF", name: "Capital One", symbol: "COF" },
+  { ticker: "AJG", name: "Arthur J. Gallagher", symbol: "AJG" },
+  { ticker: "NSC", name: "Norfolk Southern", symbol: "NSC" },
+  { ticker: "CL", name: "Colgate-Palmolive", symbol: "CL" },
+  { ticker: "USB", name: "U.S. Bancorp", symbol: "USB" },
+  { ticker: "EOG", name: "EOG Resources", symbol: "EOG" },
+  { ticker: "ORLY", name: "O'Reilly Automotive", symbol: "ORLY" },
+  { ticker: "MAR", name: "Marriott International", symbol: "MAR" },
+  { ticker: "PYPL", name: "PayPal", symbol: "PYPL" },
+  { ticker: "ABNB", name: "Airbnb", symbol: "ABNB" },
+  { ticker: "SQ", name: "Block", symbol: "SQ" },
+  { ticker: "SNOW", name: "Snowflake", symbol: "SNOW" },
+  { ticker: "SHOP", name: "Shopify", symbol: "SHOP" },
+  { ticker: "COIN", name: "Coinbase", symbol: "COIN" },
+  { ticker: "DDOG", name: "Datadog", symbol: "DDOG" },
+  { ticker: "CRWD", name: "CrowdStrike", symbol: "CRWD" },
+  { ticker: "ZS", name: "Zscaler", symbol: "ZS" },
+  { ticker: "MRNA", name: "Moderna", symbol: "MRNA" },
+  { ticker: "F", name: "Ford Motor", symbol: "F" },
+  { ticker: "GM", name: "General Motors", symbol: "GM" },
+  { ticker: "DAL", name: "Delta Air Lines", symbol: "DAL" },
   { ticker: "BTC", name: "Bitcoin", symbol: "BINANCE:BTCUSDT" },
   { ticker: "ETH", name: "Ethereum", symbol: "BINANCE:ETHUSDT" },
   { ticker: "SOL", name: "Solana", symbol: "BINANCE:SOLUSDT" },
+  { ticker: "XRP", name: "Ripple", symbol: "BINANCE:XRPUSDT" },
+  { ticker: "ADA", name: "Cardano", symbol: "BINANCE:ADAUSDT" },
+  { ticker: "DOGE", name: "Dogecoin", symbol: "BINANCE:DOGEUSDT" },
 ];
 
 type Cached = { quote: Quote; at: number };
 
 const cache = new Map<string, Cached>();
 
-/** Finnhub's free tier allows ~60 calls a minute, so refresh the stalest slice each poll. */
-const REFRESH_PER_POLL = 40;
-const STALE_MS = 90_000;
+/** Finnhub's free tier allows ~60 calls a minute. At the default 20s poll
+ * interval, staying under that budget caps us at REFRESH_PER_POLL ≈ 18
+ * (18 * 3 polls/min = 54 calls/min, leaving headroom). With ~150 symbols
+ * that means a full refresh cycle takes ~3 minutes — STALE_MS is set to
+ * match, so we don't re-request a quote before it could plausibly have
+ * changed. If you need tighter freshness across all 150+ tickers,
+ * upgrade the Finnhub plan (raises the calls/minute ceiling) rather than
+ * raising REFRESH_PER_POLL, or this will start silently dropping quotes
+ * once Finnhub starts rate-limiting the requests. */
+const REFRESH_PER_POLL = 18;
+const STALE_MS = 180_000;
 
 async function quoteFor(entry: Entry, key: string): Promise<Quote | null> {
   try {

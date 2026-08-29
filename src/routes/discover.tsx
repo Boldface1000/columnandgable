@@ -13,6 +13,7 @@ import {
   History,
 } from "lucide-react";
 import { toast } from "sonner";
+import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 import { AppShell } from "@/components/AppShell";
 import {
   useAccount,
@@ -25,6 +26,7 @@ import {
   referralLink,
   REFERRAL_REWARD,
   type BlogPost,
+  type Quote,
 } from "@/lib/app-state";
 import { useAuthGuard } from "@/lib/auth-guard";
 
@@ -80,7 +82,116 @@ function formatInCurrency(amountUsd: number, currency: CurrencyKey) {
   })}`;
 }
 
-/** Segmented radio control for choosing USD / GBP / BTC display. */
+/** Rolling in-memory price history per ticker, built up client-side from
+ * each poll of useLiveQuotes (Finnhub's free tier doesn't expose intraday
+ * candles, so this is the only source of a "live" line for the chart). */
+function useQuoteHistory(quotes: Quote[], maxPoints = 30) {
+  const [history, setHistory] = useState<Record<string, { t: number; price: number }[]>>({});
+
+  useEffect(() => {
+    if (!quotes.length) return;
+    setHistory((prev) => {
+      const next = { ...prev };
+      const t = Date.now();
+      for (const q of quotes) {
+        const arr = next[q.ticker] ? [...next[q.ticker]!] : [];
+        const last = arr[arr.length - 1];
+        if (!last || last.price !== q.price) arr.push({ t, price: q.price });
+        next[q.ticker] = arr.slice(-maxPoints);
+      }
+      return next;
+    });
+  }, [quotes, maxPoints]);
+
+  return history;
+}
+
+/** Selectable-ticker live chart, shown below the balance card. */
+function LiveStockChart({ quotes }: { quotes: Quote[] }) {
+  const history = useQuoteHistory(quotes);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selected && quotes.length) setSelected(quotes[0]!.ticker);
+  }, [quotes, selected]);
+
+  const active = quotes.find((q) => q.ticker === selected);
+  const series = selected ? (history[selected] ?? []) : [];
+  const up = (active?.change ?? 0) >= 0;
+
+  if (!quotes.length) {
+    return (
+      <section className="mt-4 onyx-surface rounded-3xl p-5 shadow-float">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/60">Live chart</p>
+        <p className="mt-3 text-sm text-white/60">Loading live prices…</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-4 onyx-surface rounded-3xl p-5 shadow-float">
+      <div className="flex items-center justify-between">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/60">Live chart</p>
+        <span className="flex items-center gap-1.5 text-xs text-white/60">
+          <span className="size-2 animate-pulse rounded-full bg-success" /> Live
+        </span>
+      </div>
+
+      <div className="mt-3 -mx-5 flex gap-2 overflow-x-auto px-5 pb-1">
+        {quotes.map((q) => (
+          <button
+            key={q.ticker}
+            onClick={() => setSelected(q.ticker)}
+            className={
+              q.ticker === selected
+                ? "gold-surface shrink-0 rounded-full px-3.5 py-1.5 text-xs font-bold"
+                : "shrink-0 rounded-full border border-white/20 px-3.5 py-1.5 text-xs font-semibold text-white/70"
+            }
+          >
+            {q.ticker}
+          </button>
+        ))}
+      </div>
+
+      {active && (
+        <>
+          <div className="mt-4 flex items-baseline gap-2">
+            <p className="font-display text-2xl font-black">
+              ${active.price.toLocaleString()}
+            </p>
+            <p className={up ? "text-sm font-bold text-success" : "text-sm font-bold text-destructive"}>
+              {up ? "+" : ""}
+              {active.change}%
+            </p>
+            <span className="text-xs text-white/50">{active.name}</span>
+          </div>
+
+          <div className="mt-3 h-28">
+            {series.length > 1 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={series}>
+                  <YAxis hide domain={["dataMin", "dataMax"]} />
+                  <Line
+                    type="monotone"
+                    dataKey="price"
+                    stroke={up ? "var(--success)" : "var(--destructive)"}
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="grid h-full place-items-center text-xs text-white/50">
+                Gathering live ticks — the line fills in as new prices come through.
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
 function CurrencyToggle({
   value,
   onChange,
@@ -220,6 +331,8 @@ function Discover() {
           <Quick to="/history" icon={<History className="size-5" />} label="History" />
         </div>
       </section>
+
+      <LiveStockChart quotes={quotes} />
 
       <section className="mt-4 rounded-3xl border border-primary/40 bg-accent/40 p-5">
         <div className="flex items-center gap-2">

@@ -220,6 +220,11 @@ export type Database = {
           monthly_gain: number
           nickname: string
           onboarded: boolean
+          pin_fail_count: number
+          pin_hash: string | null
+          pin_locked_until: string | null
+          pin_salt: string | null
+          pin_set_at: string | null
           retirement_balance: number
           savings: number
           sectors: string[]
@@ -239,6 +244,11 @@ export type Database = {
           monthly_gain?: number
           nickname?: string
           onboarded?: boolean
+          pin_fail_count?: number
+          pin_hash?: string | null
+          pin_locked_until?: string | null
+          pin_salt?: string | null
+          pin_set_at?: string | null
           retirement_balance?: number
           savings?: number
           sectors?: string[]
@@ -258,6 +268,11 @@ export type Database = {
           monthly_gain?: number
           nickname?: string
           onboarded?: boolean
+          pin_fail_count?: number
+          pin_hash?: string | null
+          pin_locked_until?: string | null
+          pin_salt?: string | null
+          pin_set_at?: string | null
           retirement_balance?: number
           savings?: number
           sectors?: string[]
